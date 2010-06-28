@@ -5,4 +5,4 @@ $ perl /suse/jblunck/baracus-zvm-server/baracus-zvm-proxy.pl
 
 Echo what is coming from the UEVENT:
 
-$ echo "LINUX101 APP 02-00-00-00-00-89,02-00-00-00-00-8A" >> .signature
+$ echo "LINUX101 APP 02-00-00-00-00-89,02-00-00-00-00-8A" >> /tmp/.Baracus-zVM

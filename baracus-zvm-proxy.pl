@@ -1,17 +1,17 @@
-#use strict;
-#use warnings;
+use strict;
+use warnings;
 use Fcntl;             # for sysopen
 use WWW::Curl::Easy;
 
 chdir;                 # go home
 my $baurl = "http://151.155.230.38/ba/";
 my $downloaddir = "/tmp";
-$fpath = '.signature';
+my $fpath = '/tmp/.Baracus-zVM';
 $ENV{PATH} .= ":/usr/games";
 
 unless (-p $fpath) {   # not a pipe
     if (-e _) {        # but a something else
-        die "$0: won't overwrite .signature\n";
+        die "$0: won't overwrite " . $fpath . "\n";
     } else {
         require POSIX;
         POSIX::mkfifo($fpath, 0666) or die "can't mknod $fpath: $!";
@@ -27,27 +27,26 @@ unless (-p $fpath) {   # not a pipe
 while (1) {
     # exit if signature file manually removed
     die "Pipe file disappeared" unless -p $fpath;
-    print "Next try\n";
+    print "Waiting for SMSG\n";
     # next line blocks until there's a reader
     sysopen(FIFO, $fpath, O_RDONLY)
         or die "can't write $fpath: $!";
-  OUTER_REDO:
     while (my $line = <FIFO>) {
-	print STDERR $line;
-	@tokens = split(/ /, $line);
-	@macs = split(",", $tokens[2]);
+	print STDERR "SMSG Payload: " . $line;
+	my @tokens = split(/ /, $line);
+	my @macs = split(",", $tokens[2]);
 	my $mac = $macs[0];
 	$mac =~ s/-/:/g;
-	print STDERR "Processing MAC " . $mac . "\n";
+	print STDERR "Processing MAC: " . $mac . "\n";
 
 	# Download all the images for this guest
 #	my @images = ('linux', 'initrd', 'parm', 'exec');
-	my @images = ('linux', 'initrd');
+	my @images = ('linux', 'parm', 'initrd');
 	foreach my $image (@images) {
 	    print STDERR "Getting " . $image . "\n";
-	    mycurl($baurl . $image . "?mac=" . $mac,
-		   $downloaddir . "/" . $tokens[0] . "." . $image);
-	    if ($? != 0) {
+	    my $ret = mycurl($baurl . $image . "?mac=" . $mac,
+			     $downloaddir . "/" . $tokens[0] . "." . $image);
+	    if ($ret != 0) {
 		goto OUTER_REDO;
 	    }
 	}
@@ -83,6 +82,11 @@ while (1) {
 	elsif ($? != 0) {
 	    print STDERR "failed to execute: $!\n";
 	}
+
+	# while
+	next;
+      OUTER_REDO:
+	print STDERR "Abort! Next try\n";
     }
     close FIFO;
     select(undef, undef, undef, 0.2);  # sleep 1/5th second
@@ -111,10 +115,13 @@ sub mycurl {
 
     # Looking at the results...
     if ($retcode == 0) {
-	print STDERR "Transfer went ok\n";
 	my $response_code = $curl->getinfo(CURLINFO_HTTP_CODE);
 	# judge result and next action based on $response_code
-#	print("Received response: $response_body\n");
+	if (($response_code < 200) || ($response_code >= 300)) {
+	    print STDERR "Received response: $response_code\n";
+	    return $response_code
+	}
+	print STDERR "Transfer went ok\n";
     } else {
 	print STDERR "An error happened: ".$curl->strerror($retcode)." ($retcode)\n";
     }
