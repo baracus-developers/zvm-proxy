@@ -31,6 +31,7 @@ while (1) {
     # next line blocks until there's a reader
     sysopen(FIFO, $fpath, O_RDONLY)
         or die "can't write $fpath: $!";
+  OUTER_REDO:
     while (my $line = <FIFO>) {
 	print STDERR $line;
 	@tokens = split(/ /, $line);
@@ -40,46 +41,47 @@ while (1) {
 	print STDERR "Processing MAC " . $mac . "\n";
 
 	# Download all the images for this guest
-	my @images = ('linux', 'initrd', 'parm', 'exec');
+#	my @images = ('linux', 'initrd', 'parm', 'exec');
+	my @images = ('linux', 'initrd');
 	foreach my $image (@images) {
 	    print STDERR "Getting " . $image . "\n";
 	    mycurl($baurl . $image . "?mac=" . $mac,
-		   $downloaddir . $tokens[0] . "." . $image);
+		   $downloaddir . "/" . $tokens[0] . "." . $image);
+	    if ($? != 0) {
+		goto OUTER_REDO;
+	    }
 	}
 
 	# Do the thing we need to do for the guest
 	@images = ('linux', 'parm', 'initrd');
 	foreach my $image (@images) {
 	    my @args = ("/usr/sbin/vmur",
-			"punch", "--rdr", "--user " . $tokens[0],
-			$downloaddir . $tokens[0] . "." . $image);
+			"punch", "--rdr", "--user", $tokens[0],
+			$downloaddir . "/" . $tokens[0] . "." . $image,
+			"--name", $tokens[0] . "." . $image);
+	    print STDERR join(' ', @args) . "\n";
 	    system(@args);
-	    if ($? == -1) {
-		print STDERR "failed to execute: $!\n";
-	    }
-	    elsif ($? & 127) {
+	    if ($? & 127) {
 		printf STDERR "child died with signal %d, %s coredump\n",
 		($? & 127), ($? & 128) ? 'with' : 'without';
+		goto OUTER_REDO;
 	    }
-	    else {
-		printf STDERR "child exited with value %d\n", $? >> 8;
+	    elsif ($? != 0) {
+		print STDERR "failed to execute: $!\n";
+		goto OUTER_REDO;
 	    }
 	}
-
-	redo;
 
 	# IPL the guest from the reader
-	my @args = ("/sbin/vmcp", "send", $tokens[0], "'#CP IPL 00c'");
+	my @args = ("/sbin/vmcp", "send", $tokens[0], "#CP IPL 00c");
+	print STDERR join(' ', @args) . "\n";
 	system(@args);
-	if ($? == -1) {
-	    print STDERR "failed to execute: $!\n";
-	}
-	elsif ($? & 127) {
+	if ($? & 127) {
 	    printf STDERR "child died with signal %d, %s coredump\n",
 	    ($? & 127), ($? & 128) ? 'with' : 'without';
 	}
-	else {
-	    printf STDERR "child exited with value %d\n", $? >> 8;
+	elsif ($? != 0) {
+	    print STDERR "failed to execute: $!\n";
 	}
     }
     close FIFO;
@@ -100,6 +102,7 @@ sub mycurl {
     # NOTE - do not use a typeglob here.
     # A reference to a typeglob is okay though.
 #    open (my $fileb, ">", \$response_body);
+    print STDERR "Writing to " . $filename . "\n";
     open (my $fileb, ">" . $filename);
     $curl->setopt(CURLOPT_WRITEDATA,$fileb);
 
@@ -108,12 +111,12 @@ sub mycurl {
 
     # Looking at the results...
     if ($retcode == 0) {
-	print("Transfer went ok\n");
+	print STDERR "Transfer went ok\n";
 	my $response_code = $curl->getinfo(CURLINFO_HTTP_CODE);
 	# judge result and next action based on $response_code
 #	print("Received response: $response_body\n");
     } else {
-	print("An error happened: ".$curl->strerror($retcode)." ($retcode)\n");
+	print STDERR "An error happened: ".$curl->strerror($retcode)." ($retcode)\n";
     }
 
     return $retcode
