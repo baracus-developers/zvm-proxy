@@ -45,6 +45,10 @@ unless (-p $fpath) {	# not a pipe
     }
 }
 
+# Callback signal handler for signals.
+$SIG{INT} = $SIG{TERM} = $SIG{HUP} = \&signalHandler;
+$SIG{PIPE} = 'ignore';
+
 if ($daemonize) {
     open STDIN, '/dev/null' or die "Can't read /dev/null: $!";
     open STDOUT, '>/dev/null' or die "Can't write to /dev/null: $!";
@@ -52,10 +56,6 @@ if ($daemonize) {
     defined(my $pid = fork) or die "Can't fork: $!";
     exit if $pid;
     setsid or die "Can't start a new session: $!";
-
-    # Callback signal handler for signals.
-    $SIG{INT} = $SIG{TERM} = $SIG{HUP} = \&signalHandler;
-    $SIG{PIPE} = 'ignore';
 
     # Create a PID file
     $daemon_pidfile = "/var/run/" . $daemon_name . ".pid";
@@ -71,8 +71,12 @@ while ($daemon_running) {
     die "FIFO file disappeared: " . $fpath unless -p $fpath;
     syslog(LOG_DEBUG, "Waiting for SMSG\n");
     # next line blocks until there's a reader
-    sysopen(FIFO, $fpath, O_RDONLY)
-	or die "can't write $fpath: $!";
+    if (!sysopen(FIFO, $fpath, O_RDONLY)) {
+	if ($! =~ /Interrupted system call/) {
+	    next;
+	}
+	die "can't write $fpath: $!";
+    }
 
     while (my $line = <FIFO>) {
 	syslog(LOG_DEBUG, "SMSG Payload: " . $line);
