@@ -3,18 +3,33 @@ use warnings;
 use Fcntl;		# for sysopen
 use WWW::Curl::Easy;
 use Sys::Syslog qw(:standard :macros);	# standard functions, plus macros
+use File::Basename;
+use POSIX qw(setsid);
 
-my $baurl = "http://151.155.230.38/ba/";
-my $downloaddir = "/tmp";
-my $fpath = '/tmp/.Baracus-zVM';
-$ENV{PATH} .= ":/usr/games";
+# Our default configuration variables
+our $baurl = "http://localhost/ba/";
+our $downloaddir = "/tmp";
+our $fpath = '/tmp/.Baracus-zVM';
+our $logmask = LOG_UPTO(LOG_INFO);
+our $daemonize = 1;
 
-# Initialize daemon
-openlog("bazvmproxy.pl $$", 'perror,pid', LOG_DAEMON);
+# Initialize syslog
+openlog(basename($0, '.pl'), 'perror,pid', LOG_DAEMON);
 chdir '/' or die "Can't chdir to /: $!";
 
-unless (-p $fpath) {   # not a pipe
-    if (-e _) {        # but a something else
+# Read in (perl style) configuration file
+my $confpath = "/etc/" . basename($0, '.pl') . ".conf";
+if (-s $confpath) {
+    syslog(LOG_INFO, "Using configuration file " . $confpath);
+    do $confpath;
+}
+
+# logmask could have changed due to configuration file settings
+setlogmask($logmask);
+$ENV{PATH} .= ":/sbin";
+
+unless (-p $fpath) {	# not a pipe
+    if (-e _) {		# but a something else
 	die "$0: won't overwrite " . $fpath . "\n";
     } else {
 	require POSIX;
@@ -23,10 +38,14 @@ unless (-p $fpath) {   # not a pipe
     }
 }
 
-#
-#curl -o s390s03.linux  http://baracus/ba/linux?mac=<mac>
-#curl -o s390s03.initrd http://baracus/ba/initrd?mac=<mac>
-#
+if ($daemonize) {
+    open STDIN, '/dev/null' or die "Can't read /dev/null: $!";
+    open STDOUT, '>/dev/null' or die "Can't write to /dev/null: $!";
+    open STDERR, '>/dev/null' or die "Can't write to /dev/null: $!";
+    defined(my $pid = fork) or die "Can't fork: $!";
+    exit if $pid;
+    setsid or die "Can't start a new session: $!";
+}
 
 while (1) {
     # exit if fifo file manually removed
@@ -35,57 +54,75 @@ while (1) {
     # next line blocks until there's a reader
     sysopen(FIFO, $fpath, O_RDONLY)
 	or die "can't write $fpath: $!";
+
     while (my $line = <FIFO>) {
 	syslog(LOG_DEBUG, "SMSG Payload: " . $line);
 	my @tokens = split(/ /, $line);
 	my @macs = split(",", $tokens[2]);
 	my $mac = $macs[0];
 	$mac =~ s/-/:/g;
-	syslog(LOG_INFO, "Processing MAC: " . $mac . "\n");
+	my $punched = 0;
 
-	# Download all the images for this guest
-#	my @images = ('linux', 'initrd', 'parm', 'exec');
-	my @images = ('linux', 'parm', 'initrd');
-	foreach my $image (@images) {
-	    syslog(LOG_DEBUG, "Getting " . $image . "\n");
-	    my $ret = mycurl($baurl . $image . "?mac=" . $mac,
-			     $downloaddir . "/" . $tokens[0] . "." . $image);
-	    if ($ret != 0) {
-		goto OUTER_REDO;
+	syslog(LOG_INFO, "%s: Processing MAC %s\n", $tokens[0], $mac);
+
+	if (fetch_images($tokens[0], $mac,
+			 my @images = ('linux', 'parm', 'initrd')) == 0) {
+	    syslog(LOG_INFO, "%s: Punching images %s\n", $tokens[0],
+		   join(' ', @images));
+
+	    foreach my $image (@images) {
+		my @args = ("/usr/sbin/vmur",
+			    "punch", "--rdr", "--user", $tokens[0],
+			    get_downloadpath($tokens[0], $image),
+			    "--name",
+			    get_imagename($tokens[0], $image));
+		syslog(LOG_DEBUG, join(' ', @args) . "\n");
+		system(@args);
+		if ($? & 127) {
+		    syslog(LOG_CRIT,
+			   "child died with signal %d, %s coredump\n",
+			   ($? & 127), ($? & 128) ? 'with' : 'without');
+		    goto OUTER_REDO;
+		} elsif ($? != 0) {
+		    syslog(LOG_ERR, "failed to execute: $!\n");
+		    goto OUTER_REDO;
+		}
 	    }
+
+	    $punched = 1;
 	}
 
-	# Do the thing we need to do for the guest
-	@images = ('linux', 'parm', 'initrd');
-	foreach my $image (@images) {
-	    my @args = ("/usr/sbin/vmur",
-			"punch", "--rdr", "--user", $tokens[0],
-			$downloaddir . "/" . $tokens[0] . "." . $image,
-			"--name", $tokens[0] . "." . $image);
+	if (fetch_images($tokens[0], $mac, my @images = ('exec')) == 0) {
+	    syslog(LOG_ERR, "Not implemented yet!\n");
+	    goto OUTER_REDO;
+	}
+	#
+	# If we successfully punched something but failed to download a guest
+	# REXX script we want to IPL the guest from the reader
+	#
+	elsif ($punched) {
+	    syslog(LOG_INFO, "%s: IPL guest from RDR\n", $tokens[0]);
+	    my @args = ("/sbin/vmcp", "send", $tokens[0], "#CP IPL 00c");
 	    syslog(LOG_DEBUG, join(' ', @args) . "\n");
 	    system(@args);
 	    if ($? & 127) {
 		syslog(LOG_CRIT, "child died with signal %d, %s coredump\n",
 		       ($? & 127), ($? & 128) ? 'with' : 'without');
-		goto OUTER_REDO;
-	    }
-	    elsif ($? != 0) {
+	    } elsif ($? != 0) {
 		syslog(LOG_ERR, "failed to execute: $!\n");
-		goto OUTER_REDO;
 	    }
 	}
-
-	# IPL the guest from the reader
-	my @args = ("/sbin/vmcp", "send", $tokens[0], "#CP IPL 00c");
-	syslog(LOG_DEBUG, join(' ', @args) . "\n");
-	system(@args);
-	if ($? & 127) {
-	    syslog(LOG_CRIT, "child died with signal %d, %s coredump\n",
-		   ($? & 127), ($? & 128) ? 'with' : 'without');
-	}
-	elsif ($? != 0) {
-	    syslog(LOG_ERR, "failed to execute: $!\n");
-	}
+#	else {
+#	    my @args = ("/sbin/vmcp", "send", $tokens[0], "#CP LOGOFF");
+#	    syslog(LOG_DEBUG, join(' ', @args) . "\n");
+#	    system(@args);
+#	    if ($? & 127) {
+#		syslog(LOG_CRIT, "child died with signal %d, %s coredump\n",
+#		       ($? & 127), ($? & 128) ? 'with' : 'without');
+#	    } elsif ($? != 0) {
+#		syslog(LOG_ERR, "failed to execute: $!\n");
+#	    }
+#	}
 
 	# while
 	next;
@@ -98,6 +135,11 @@ while (1) {
 
 closelog();
 
+
+#
+#curl -o s390s03.linux  http://baracus/ba/linux?mac=<mac>
+#curl -o s390s03.initrd http://baracus/ba/initrd?mac=<mac>
+#
 sub mycurl
 {
     my($url, $filename) = @_;
@@ -105,15 +147,13 @@ sub mycurl
     # Setting the options
     my $curl = new WWW::Curl::Easy;
 
-#    $curl->setopt(CURLOPT_HEADER,1);
     $curl->setopt(CURLOPT_HEADER,0);
     $curl->setopt(CURLOPT_URL, $url);
     my $response_body;
 
     # NOTE - do not use a typeglob here.
     # A reference to a typeglob is okay though.
-#    open (my $fileb, ">", \$response_body);
-    syslog(LOG_DEBUG, "Writing to " . $filename . "\n");
+    syslog(LOG_DEBUG, "Writing to %s\n", $filename);
     open (my $fileb, ">" . $filename);
     $curl->setopt(CURLOPT_WRITEDATA,$fileb);
 
@@ -123,16 +163,55 @@ sub mycurl
     # Looking at the results...
     if ($retcode == 0) {
 	my $response_code = $curl->getinfo(CURLINFO_HTTP_CODE);
+	syslog(LOG_DEBUG, "Status: %d, URL: %s\n", $response_code,
+	       $curl->getinfo(CURLINFO_EFFECTIVE_URL));
 	# judge result and next action based on $response_code
 	if (($response_code < 200) || ($response_code >= 300)) {
-	    syslog(LOG_DEBUG, "Received response: $response_code\n");
 	    return $response_code
 	}
-	syslog(LOG_DEBUG, "Transfer went ok\n");
     } else {
 	syslog(LOG_ERR, "An error happened: " .
 	       $curl->strerror($retcode) ." ($retcode)\n");
     }
 
     return $retcode
+}
+
+sub get_imagename
+{
+    my($userid, $image) = @_;
+    my %imagenames = ("linux", "image");
+
+    if (exists($imagenames{$image})) {
+	return $userid . "." . $imagenames{$image};
+    } else {
+	return $userid . "." . $image;
+    }
+}
+
+sub get_downloadpath
+{
+    my($userid, $image) = @_;
+    return $downloaddir . "/" . get_imagename($userid, $image);
+}
+
+#
+# Download the necessary images for punching them to the reader later
+#
+# Globals used:
+# - $baurl
+#
+sub fetch_images
+{
+    my($userid, $mac, @images) = @_;
+    my $retval = 0;
+
+    foreach my $image (@images) {
+	syslog(LOG_DEBUG, "Getting " . $image . "\n");
+	$retval = mycurl($baurl . $image . "?mac=" . $mac,
+			 get_downloadpath($userid, $image));
+	if ($retval != 0) {
+	    return $retval;
+	}
+    }
 }
