@@ -115,15 +115,16 @@ while ($daemon_running) {
 	    $punched = 1;
 	}
 
-	if (fetch_images($tokens[0], $mac, my @images = ('exec')) == 0) {
-	    syslog(LOG_ERR, "Not implemented yet!\n");
-	    goto OUTER_REDO;
-	}
+#	if (fetch_images($tokens[0], $mac, my @images = ('exec')) == 0) {
+#	    syslog(LOG_ERR, "Not implemented yet!\n");
+#	    goto OUTER_REDO;
+#	}
 	#
 	# If we successfully punched something but failed to download a guest
 	# REXX script we want to IPL the guest from the reader
 	#
-	elsif ($punched) {
+#	elsif ($punched) {
+	if ($punched) {
 	    syslog(LOG_INFO, "%s: IPL guest from RDR\n", $tokens[0]);
 	    my @args = ("/sbin/vmcp", "send", $tokens[0], "#CP IPL 00c");
 	    syslog(LOG_DEBUG, join(' ', @args) . "\n");
