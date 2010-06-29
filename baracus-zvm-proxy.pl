@@ -1,21 +1,25 @@
 use strict;
 use warnings;
-use Fcntl;             # for sysopen
+use Fcntl;		# for sysopen
 use WWW::Curl::Easy;
+use Sys::Syslog qw(:standard :macros);	# standard functions, plus macros
 
-chdir;                 # go home
 my $baurl = "http://151.155.230.38/ba/";
 my $downloaddir = "/tmp";
 my $fpath = '/tmp/.Baracus-zVM';
 $ENV{PATH} .= ":/usr/games";
 
+# Initialize daemon
+openlog("bazvmproxy.pl $$", 'perror,pid', LOG_DAEMON);
+chdir '/' or die "Can't chdir to /: $!";
+
 unless (-p $fpath) {   # not a pipe
     if (-e _) {        # but a something else
-        die "$0: won't overwrite " . $fpath . "\n";
+	die "$0: won't overwrite " . $fpath . "\n";
     } else {
-        require POSIX;
-        POSIX::mkfifo($fpath, 0666) or die "can't mknod $fpath: $!";
-        warn "$0: created $fpath as a named pipe\n";
+	require POSIX;
+	POSIX::mkfifo($fpath, 0666) or die "can't mknod $fpath: $!";
+	warn "$0: created $fpath as a named pipe\n";
     }
 }
 
@@ -25,25 +29,25 @@ unless (-p $fpath) {   # not a pipe
 #
 
 while (1) {
-    # exit if signature file manually removed
-    die "Pipe file disappeared" unless -p $fpath;
-    print "Waiting for SMSG\n";
+    # exit if fifo file manually removed
+    die "FIFO file disappeared: " . $fpath unless -p $fpath;
+    syslog(LOG_DEBUG, "Waiting for SMSG\n");
     # next line blocks until there's a reader
     sysopen(FIFO, $fpath, O_RDONLY)
-        or die "can't write $fpath: $!";
+	or die "can't write $fpath: $!";
     while (my $line = <FIFO>) {
-	print STDERR "SMSG Payload: " . $line;
+	syslog(LOG_DEBUG, "SMSG Payload: " . $line);
 	my @tokens = split(/ /, $line);
 	my @macs = split(",", $tokens[2]);
 	my $mac = $macs[0];
 	$mac =~ s/-/:/g;
-	print STDERR "Processing MAC: " . $mac . "\n";
+	syslog(LOG_INFO, "Processing MAC: " . $mac . "\n");
 
 	# Download all the images for this guest
 #	my @images = ('linux', 'initrd', 'parm', 'exec');
 	my @images = ('linux', 'parm', 'initrd');
 	foreach my $image (@images) {
-	    print STDERR "Getting " . $image . "\n";
+	    syslog(LOG_DEBUG, "Getting " . $image . "\n");
 	    my $ret = mycurl($baurl . $image . "?mac=" . $mac,
 			     $downloaddir . "/" . $tokens[0] . "." . $image);
 	    if ($ret != 0) {
@@ -58,41 +62,44 @@ while (1) {
 			"punch", "--rdr", "--user", $tokens[0],
 			$downloaddir . "/" . $tokens[0] . "." . $image,
 			"--name", $tokens[0] . "." . $image);
-	    print STDERR join(' ', @args) . "\n";
+	    syslog(LOG_DEBUG, join(' ', @args) . "\n");
 	    system(@args);
 	    if ($? & 127) {
-		printf STDERR "child died with signal %d, %s coredump\n",
-		($? & 127), ($? & 128) ? 'with' : 'without';
+		syslog(LOG_CRIT, "child died with signal %d, %s coredump\n",
+		       ($? & 127), ($? & 128) ? 'with' : 'without');
 		goto OUTER_REDO;
 	    }
 	    elsif ($? != 0) {
-		print STDERR "failed to execute: $!\n";
+		syslog(LOG_ERR, "failed to execute: $!\n");
 		goto OUTER_REDO;
 	    }
 	}
 
 	# IPL the guest from the reader
 	my @args = ("/sbin/vmcp", "send", $tokens[0], "#CP IPL 00c");
-	print STDERR join(' ', @args) . "\n";
+	syslog(LOG_DEBUG, join(' ', @args) . "\n");
 	system(@args);
 	if ($? & 127) {
-	    printf STDERR "child died with signal %d, %s coredump\n",
-	    ($? & 127), ($? & 128) ? 'with' : 'without';
+	    syslog(LOG_CRIT, "child died with signal %d, %s coredump\n",
+		   ($? & 127), ($? & 128) ? 'with' : 'without');
 	}
 	elsif ($? != 0) {
-	    print STDERR "failed to execute: $!\n";
+	    syslog(LOG_ERR, "failed to execute: $!\n");
 	}
 
 	# while
 	next;
       OUTER_REDO:
-	print STDERR "Abort! Next try\n";
+	syslog(LOG_DEBUG, "Abort! Next try\n");
     }
     close FIFO;
     select(undef, undef, undef, 0.2);  # sleep 1/5th second
 }
 
-sub mycurl {
+closelog();
+
+sub mycurl
+{
     my($url, $filename) = @_;
 
     # Setting the options
@@ -106,7 +113,7 @@ sub mycurl {
     # NOTE - do not use a typeglob here.
     # A reference to a typeglob is okay though.
 #    open (my $fileb, ">", \$response_body);
-    print STDERR "Writing to " . $filename . "\n";
+    syslog(LOG_DEBUG, "Writing to " . $filename . "\n");
     open (my $fileb, ">" . $filename);
     $curl->setopt(CURLOPT_WRITEDATA,$fileb);
 
@@ -118,12 +125,13 @@ sub mycurl {
 	my $response_code = $curl->getinfo(CURLINFO_HTTP_CODE);
 	# judge result and next action based on $response_code
 	if (($response_code < 200) || ($response_code >= 300)) {
-	    print STDERR "Received response: $response_code\n";
+	    syslog(LOG_DEBUG, "Received response: $response_code\n");
 	    return $response_code
 	}
-	print STDERR "Transfer went ok\n";
+	syslog(LOG_DEBUG, "Transfer went ok\n");
     } else {
-	print STDERR "An error happened: ".$curl->strerror($retcode)." ($retcode)\n";
+	syslog(LOG_ERR, "An error happened: " .
+	       $curl->strerror($retcode) ." ($retcode)\n");
     }
 
     return $retcode
