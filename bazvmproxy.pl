@@ -1,3 +1,5 @@
+#!/usr/bin/perl -w
+
 use strict;
 use warnings;
 use Fcntl;		# for sysopen
@@ -6,19 +8,24 @@ use Sys::Syslog qw(:standard :macros);	# standard functions, plus macros
 use File::Basename;
 use POSIX qw(setsid);
 
+my $daemon_name = basename($0, '.pl');
+my $daemon_pidfile;	# Will be filled in daemonize
+my $daemon_running = 1;
+
 # Our default configuration variables
 our $baurl = "http://localhost/ba/";
 our $downloaddir = "/tmp";
-our $fpath = '/tmp/.Baracus-zVM';
+our $fpath = "/var/run/" . $daemon_name . ".fifo";
 our $logmask = LOG_UPTO(LOG_INFO);
 our $daemonize = 1;
 
-# Initialize syslog
-openlog(basename($0, '.pl'), 'perror,pid', LOG_DAEMON);
+# Initialize syslog and first part of daemonization
+openlog($daemon_name, 'perror,pid', LOG_DAEMON);
 chdir '/' or die "Can't chdir to /: $!";
+umask 0;
 
 # Read in (perl style) configuration file
-my $confpath = "/etc/" . basename($0, '.pl') . ".conf";
+my $confpath = "/etc/" . $daemon_name . ".conf";
 if (-s $confpath) {
     syslog(LOG_INFO, "Using configuration file " . $confpath);
     do $confpath;
@@ -45,9 +52,21 @@ if ($daemonize) {
     defined(my $pid = fork) or die "Can't fork: $!";
     exit if $pid;
     setsid or die "Can't start a new session: $!";
+
+    # Callback signal handler for signals.
+    $SIG{INT} = $SIG{TERM} = $SIG{HUP} = \&signalHandler;
+    $SIG{PIPE} = 'ignore';
+
+    # Create a PID file
+    $daemon_pidfile = "/var/run/" . $daemon_name . ".pid";
+    sysopen(PIDFILE, $daemon_pidfile, O_WRONLY | O_CREAT | O_EXCL, 0600)
+	or die "Pid file already exists: " . $daemon_pidfile . "\n";
+
+    print PIDFILE $$;
+    close(PIDFILE);
 }
 
-while (1) {
+while ($daemon_running) {
     # exit if fifo file manually removed
     die "FIFO file disappeared: " . $fpath unless -p $fpath;
     syslog(LOG_DEBUG, "Waiting for SMSG\n");
@@ -133,6 +152,7 @@ while (1) {
     select(undef, undef, undef, 0.2);  # sleep 1/5th second
 }
 
+syslog(LOG_INFO, "Exiting\n");
 closelog();
 
 
@@ -213,5 +233,17 @@ sub fetch_images
 	if ($retval != 0) {
 	    return $retval;
 	}
+    }
+}
+
+# catch signals and end the program if one is caught.
+sub signalHandler {
+    $daemon_running = 0;
+}
+
+# do this stuff when exit() is called.
+END {
+    if($daemon_pidfile) {
+	unlink($daemon_pidfile);
     }
 }
