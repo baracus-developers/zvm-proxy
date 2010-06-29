@@ -82,77 +82,86 @@ while ($daemon_running) {
 	syslog(LOG_DEBUG, "SMSG Payload: " . $line);
 	my @tokens = split(/ /, $line);
 	my @macs = split(",", $tokens[2]);
-	my $mac = $macs[0];
-	$mac =~ s/-/:/g;
-	my $punched = 0;
 
-	syslog(LOG_INFO, "%s: Processing MAC %s\n", $tokens[0], $mac);
+	foreach my $mac (@macs) {
+	    my $punched = 0;
 
-	if (fetch_images($tokens[0], $mac,
-			 my @images = ('linux', 'parm', 'initrd')) == 0) {
-	    syslog(LOG_INFO, "%s: Punching images %s\n", $tokens[0],
-		   join(' ', @images));
+	    # z/VM is using "-" as a separator
+	    $mac =~ s/-/:/g;
 
-	    foreach my $image (@images) {
-		my @args = ("/usr/sbin/vmur",
-			    "punch", "--rdr", "--user", $tokens[0],
-			    get_downloadpath($tokens[0], $image),
-			    "--name",
-			    get_imagename($tokens[0], $image));
+	    syslog(LOG_INFO, "%s: Processing MAC %s\n", $tokens[0], $mac);
+
+	    if (fetch_images($tokens[0], $mac,
+			     my @images = ('linux', 'parm', 'initrd')) == 0) {
+		syslog(LOG_INFO, "%s: Punching images %s\n", $tokens[0],
+		       join(' ', @images));
+
+		foreach my $image (@images) {
+		    my @args = ("/usr/sbin/vmur",
+				"punch", "--rdr", "--user", $tokens[0],
+				get_downloadpath($tokens[0], $image),
+				"--name",
+				get_imagename($tokens[0], $image));
+		    syslog(LOG_DEBUG, join(' ', @args) . "\n");
+		    system(@args);
+		    if ($? & 127) {
+			syslog(LOG_CRIT,
+			       "child died with signal %d, %s coredump\n",
+			       ($? & 127), ($? & 128) ? 'with' : 'without');
+			goto ERROR_NEXT;
+		    } elsif ($? != 0) {
+			syslog(LOG_ERR, "failed to execute: $!\n");
+			goto ERROR_NEXT;
+		    }
+		}
+
+		$punched = 1;
+	    }
+
+#	    if (fetch_images($tokens[0], $mac, my @images = ('exec')) == 0) {
+#		syslog(LOG_INFO, "Not implemented yet!\n");
+#		goto SUCCESS_NEXT;
+#	    }
+	    #
+	    # If we successfully punched something but failed to download a
+	    # guest REXX script we want to IPL the guest from the reader
+	    #
+#	    elsif ($punched) {
+	    if ($punched) {
+		syslog(LOG_INFO, "%s: IPL guest from RDR\n", $tokens[0]);
+		my @args = ("/sbin/vmcp", "send", $tokens[0],
+			    "#CP IPL 00c");
 		syslog(LOG_DEBUG, join(' ', @args) . "\n");
 		system(@args);
 		if ($? & 127) {
-		    syslog(LOG_CRIT,
-			   "child died with signal %d, %s coredump\n",
+		    syslog(LOG_CRIT, "child died with signal %d, %s coredump\n",
 			   ($? & 127), ($? & 128) ? 'with' : 'without');
-		    goto OUTER_REDO;
 		} elsif ($? != 0) {
 		    syslog(LOG_ERR, "failed to execute: $!\n");
-		    goto OUTER_REDO;
 		}
+		goto SUCCESS_NEXT;
 	    }
+	} # @macs
 
-	    $punched = 1;
+	#
+	# If we are here none of the MACs was registered with Baracus.
+	#
+	my @args = ("/sbin/vmcp", "send", $tokens[0], "#CP LOGOFF");
+	syslog(LOG_DEBUG, join(' ', @args) . "\n");
+	system(@args);
+	if ($? & 127) {
+	    syslog(LOG_CRIT, "child died with signal %d, %s coredump\n",
+		   ($? & 127), ($? & 128) ? 'with' : 'without');
+	} elsif ($? != 0) {
+	    syslog(LOG_ERR, "failed to execute: $!\n");
 	}
 
-#	if (fetch_images($tokens[0], $mac, my @images = ('exec')) == 0) {
-#	    syslog(LOG_ERR, "Not implemented yet!\n");
-#	    goto OUTER_REDO;
-#	}
-	#
-	# If we successfully punched something but failed to download a guest
-	# REXX script we want to IPL the guest from the reader
-	#
-#	elsif ($punched) {
-	if ($punched) {
-	    syslog(LOG_INFO, "%s: IPL guest from RDR\n", $tokens[0]);
-	    my @args = ("/sbin/vmcp", "send", $tokens[0], "#CP IPL 00c");
-	    syslog(LOG_DEBUG, join(' ', @args) . "\n");
-	    system(@args);
-	    if ($? & 127) {
-		syslog(LOG_CRIT, "child died with signal %d, %s coredump\n",
-		       ($? & 127), ($? & 128) ? 'with' : 'without');
-	    } elsif ($? != 0) {
-		syslog(LOG_ERR, "failed to execute: $!\n");
-	    }
-	}
-#	else {
-#	    my @args = ("/sbin/vmcp", "send", $tokens[0], "#CP LOGOFF");
-#	    syslog(LOG_DEBUG, join(' ', @args) . "\n");
-#	    system(@args);
-#	    if ($? & 127) {
-#		syslog(LOG_CRIT, "child died with signal %d, %s coredump\n",
-#		       ($? & 127), ($? & 128) ? 'with' : 'without');
-#	    } elsif ($? != 0) {
-#		syslog(LOG_ERR, "failed to execute: $!\n");
-#	    }
-#	}
-
-	# while
 	next;
-      OUTER_REDO:
+      ERROR_NEXT:
 	syslog(LOG_DEBUG, "Abort! Next try\n");
-    }
+      SUCCESS_NEXT:
+    } # $line
+
     close FIFO;
     select(undef, undef, undef, 0.2);  # sleep 1/5th second
 }
