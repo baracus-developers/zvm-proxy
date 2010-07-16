@@ -2,7 +2,8 @@ Start the server:
 
 $ perl /suse/jblunck/baracus-zvm-server/baracus-zvm-proxy.pl
 
+The server is listening on the socket /var/run/bazvmproxy.socket (or whatever
+you define in $socketpath). UDEV is forwarding the uevent to that socket with
+the following rule:
 
-Echo what is coming from the UEVENT:
-
-$ echo "LINUX101 APP 02-00-00-00-00-89,02-00-00-00-00-8A" >> /tmp/.Baracus-zVM
+KERNEL=="smsgiucv_app" SUBSYSTEM=="iucv" ACTION=="change" RUN+="socket:/var/run/bazvmproxy.socket"

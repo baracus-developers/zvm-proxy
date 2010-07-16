@@ -7,6 +7,7 @@ use WWW::Curl::Easy;
 use Sys::Syslog qw(:standard :macros);	# standard functions, plus macros
 use File::Basename;
 use POSIX qw(setsid);
+use IO::Socket;
 
 my $daemon_name = basename($0, '.pl');
 my $daemon_pidfile;	# Will be filled in daemonize
@@ -15,7 +16,7 @@ my $daemon_running = 1;
 # Our default configuration variables
 our $baurl = "http://localhost/ba/";
 our $downloaddir = "/tmp";
-our $fpath = "/var/run/" . $daemon_name . ".fifo";
+our $socketpath = "/var/run/" . $daemon_name . ".socket";
 our $logmask = LOG_UPTO(LOG_INFO);
 our $daemonize = 1;
 
@@ -35,15 +36,20 @@ if (-s $confpath) {
 setlogmask($logmask);
 $ENV{PATH} .= ":/sbin";
 
-unless (-p $fpath) {	# not a pipe
-    if (-e _) {		# but a something else
-	die "$0: won't overwrite " . $fpath . "\n";
-    } else {
-	require POSIX;
-	POSIX::mkfifo($fpath, 0666) or die "can't mknod $fpath: $!";
-	warn "$0: created $fpath as a named pipe\n";
-    }
+my($socket, $msg, $MAXLEN);
+$MAXLEN = 1024;
+
+# $socketpath is not a socket but something else
+unlink($socketpath) if (-S $socketpath);
+if (-e $socketpath) {
+    die "$0: won't overwrite " . $socketpath . "\n";
 }
+
+$socket = IO::Socket::UNIX->new(Local => $socketpath,
+			      Type  => SOCK_DGRAM)
+    or die "socket: $@";
+syslog(LOG_DEBUG, "Awaiting messages on " . $socket->hostpath() . "\n");
+
 
 # Callback signal handler for signals.
 $SIG{INT} = $SIG{TERM} = $SIG{HUP} = \&signalHandler;
@@ -67,23 +73,26 @@ if ($daemonize) {
 }
 
 while ($daemon_running) {
-    # exit if fifo file manually removed
-    die "FIFO file disappeared: " . $fpath unless -p $fpath;
-    syslog(LOG_DEBUG, "Waiting for SMSG\n");
-    # next line blocks until there's a reader
-    if (!sysopen(FIFO, $fpath, O_RDONLY)) {
+    # exit if socket manually removed
+    die "SOCKET disappeared: " . $socketpath unless -S $socketpath;
+    syslog(LOG_DEBUG, "Waiting for SMSG event\n");
+
+    # next line blocks until there's an event
+    if(!defined($socket->recv($msg, $MAXLEN, 0))) {
 	if ($! =~ /Interrupted system call/) {
 	    next;
 	}
-	die "can't write $fpath: $!";
+	die "can't recv from $socketpath: $!";
     }
 
-    while (my $line = <FIFO>) {
-	syslog(LOG_DEBUG, "SMSG Payload: " . $line);
-	process_smsg_event($line);
-    }
+    my ($header, $kv) = split(chr(0), $msg, 2);
+    my %values = split(/[=\0]/, $kv);
 
-    close FIFO;
+    my $line = join(' ', $values{'SMSG_SENDER'}, $values{'SMSG_ID'},
+		    $values{'SMSG_TEXT'});
+    syslog(LOG_DEBUG, "SMSG Payload: " . $line);
+    process_smsg_event($line);
+
     select(undef, undef, undef, 0.2);  # sleep 1/5th second
 }
 
