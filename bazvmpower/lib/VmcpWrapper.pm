@@ -23,35 +23,38 @@ sub power
     local($operation, $hostname) = @_;
     local($command, $result);
 
-    return 0 unless ((scalar(@_) == 2) &&
-		     grep(/$operation/,keys(%operations)));
+    die "Invalid argument: '" . join(" ", @_) . "'"
+	unless ((scalar(@_) == 2) && grep(/$operation/,keys(%operations)));
 
     $command = sprintf( $operations{ $operation }, $hostname );
 
     if ( $operation eq "status") {
 	$command .= " 2>&1 1>/dev/null";
 	$result = `$command`;
-	if ( $? == 0 ) {
+	if ($? == -1) {
+	    die "Error running '$command': $!";
+	} elsif ( $? == 0 ) {
 	    return "Online";
 	} elsif ( $? == 256 ) {
 	    $result =~ m/^Error:.*: #(\d+)$/;
 	    if ( defined($1) && $1 == 45 ) {
 		return "Offline";
 	    } else {
-		die "VMCP: " . ($result || "Unknown error") . "\n";
+		chomp($result);
+		die ($result || "Unknown error");
 	    }
-	} elsif ($? == -1) {
-	    die "VMCP: error running '$command': $!\n";
 	} else {
-	    die "VMCP: " . ($result || "Unknown error") . "\n";
+	    chomp($result);
+	    die ($result || "Unknown error");
 	}
     } else {
 	$command .= " 2>&1";
 	$result = `$command`;
 	if ($? == -1) {
-	    die "VMCP: error running '$command': $!\n";
+	    die "Error running '$command': $!";
 	} elsif ($? != 0) {
-	    die "VMCP: " . ($result || "Unknown error") . "\n";
+	    chomp($result);
+	    die ($result || "Unknown error");
 	}
     }
 
