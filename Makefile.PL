@@ -3,10 +3,11 @@ use ExtUtils::MakeMaker;
 # See lib/ExtUtils/MakeMaker.pm for details of how to influence
 # the contents of the Makefile that is written.
 WriteMakefile(
-    NAME              => 'Baracus::PidCreator',
-    VERSION_FROM      => 'lib/Baracus/PidCreator.pm', # finds $VERSION
+    NAME              => 'Baracus::zVMProxy',
+    VERSION_FROM      => 'lib/Baracus/zVMProxy.pm', # finds $VERSION
     PREREQ_PM         => {}, # e.g., Module::Name => 1.1
     ($] >= 5.005 ?     ## Add these new keywords supported since 5.005
-      (ABSTRACT_FROM  => 'lib/Baracus/PidCreator.pm', # retrieve abstract from module
-       AUTHOR         => 'Jan Blunck <jblunck@(none)>') : ()),
+      (ABSTRACT_FROM  => 'lib/Baracus/zVMProxy.pm', # retrieve abstract from module
+       AUTHOR         => 'Jan Blunck <jblunck@novell.com>') : ()),
+    EXE_FILES         => ['script/bazvmproxy.pl'],
 );

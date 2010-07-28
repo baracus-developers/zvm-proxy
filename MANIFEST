@@ -2,5 +2,8 @@ Changes
 Makefile.PL
 MANIFEST
 README
+bazvmproxy.conf
 t/Baracus-zVMProxy.t
 lib/Baracus/PidCreator.pm
+lib/Baracus/zVMProxy.pm
+script/bazvmproxy.pl
