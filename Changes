@@ -1,0 +1,6 @@
+Revision history for Perl extension Baracus::zVMProxy.
+
+0.01  Wed Jul 28 18:12:21 2010
+	- original version; created by h2xs 1.23 with options
+		-X -n Baracus::zVMProxy
+
