@@ -5,6 +5,25 @@ use VmcpWrapper;
 my @actions = ( "on", "off", "cycle", "status" );
 
 our $VERSION = '0.1';
+our $baaddress = eval {
+    use Socket;
+
+    # Our default configuration variables
+    our $baurl = "http://localhost/ba/";
+    # Read in (perl style) configuration file
+    my $confpath = "/etc/bazvmproxy.conf";
+    if (-s $confpath) {
+	debug "Using configuration file " . $confpath;
+	do $confpath;
+    }
+
+    my $address;
+    if ($baurl =~ m/^(\w+\:\/\/)?([a-zA-Z0-9\-\.]+)(\/.*)?$/) {
+	$address = inet_ntoa(inet_aton($2)) or die "Can't resolve $2: $!\n";
+    }
+    $address;
+};
+debug "Using Baracus server at $baaddress\n";
 
 get '/' => sub {
     template 'index';
@@ -21,12 +40,13 @@ get '/power/:guest/:action' => sub {
 
     debug "Host: '" . request->{host} . "'\n";
     debug "Remote: '" . request->remote_address . "'\n";
+
     my %reqenv = %{request->env};
     while (my($key, $value) = each %reqenv) {
 	debug "$key: " . (defined $value ? $value : "" ) . "\n";
     }
 
-    if (request->remote_address ne "10.10.0.23") {
+    if (request->remote_address ne $baaddress) {
 	error("Not authorized");
 	return { error => "Not authorized" };
     }
