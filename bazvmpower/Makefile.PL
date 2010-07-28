@@ -5,8 +5,8 @@ use ExtUtils::MakeMaker;
 my @scripts = qw(bazvmpower.pl vmcp.pl);
 
 WriteMakefile(
-    NAME                => 'zVMPower',
-    AUTHOR              => q{YOUR NAME <youremail@example.com>},
+    NAME                => 'Baracus::zVMPower',
+    AUTHOR              => q{Jan Blunck <jblunck@novell.com>},
     VERSION_FROM        => 'lib/Baracus/zVMPower.pm',
     ABSTRACT            => 'YOUR APPLICATION ABSTRACT',
     ($ExtUtils::MakeMaker::VERSION >= 6.3002
