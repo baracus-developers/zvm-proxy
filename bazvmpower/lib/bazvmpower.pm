@@ -19,6 +19,18 @@ get '/power/:guest/:action' => sub {
     debug "Guest: '" . params->{guest} .
 	"', Action: '" . params->{action} . "'\n";
 
+    debug "Host: '" . request->{host} . "'\n";
+    debug "Remote: '" . request->remote_address . "'\n";
+    my %reqenv = %{request->env};
+    while (my($key, $value) = each %reqenv) {
+	debug "$key: " . (defined $value ? $value : "" ) . "\n";
+    }
+
+    if (request->remote_address ne "10.10.0.23") {
+	error("Not authorized");
+	return { error => "Not authorized" };
+    }
+
     eval {
 	my $result = power($action, $guest);
 	return { guest => params->{guest}, status => $result };
