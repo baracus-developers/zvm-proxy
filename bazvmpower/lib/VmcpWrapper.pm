@@ -1,5 +1,6 @@
 package VmcpWrapper;
 require Exporter;
+use POSIX;
 
 @ISA = qw(Exporter);
 @EXPORT = qw(power);
@@ -15,14 +16,39 @@ my %operations = (
     'status' => '/sbin/vmcp query %s',
     );
 
+my %responses = (
+    'on'     => 'Online',
+    'off'    => 'Offline',
+    'cycle'  => 'Online',
+    'status' => 'Online',
+    );
+
 sub run_command
 {
     local($command) = @_;
-    local(@result);
+    local(@result, @contents, $pid);
 
-    $result[0] = `$command`;
+    # Dancer: do not automatically reap this child
+    local $savesig = $SIG{CHLD};
+    $SIG{CHLD} = 'DEFAULT';
+
+    $pid = open(PIPE, $command . ' |');
+    unless (defined $pid) {
+	die "Cannot fork: $!";
+    }
+
+    while (<PIPE>) {
+	push @contents, $_;
+    }
+
+    close(PIPE);
+
+    $result[0] = join("\n", @contents);
     $result[1] = $?;
     $result[2] = $!;
+
+    # Restore original signal setting
+    $SIG{CHLD} = $savesig;
     return @result;
 }
 
@@ -39,35 +65,23 @@ sub power
 
     $command = sprintf( $operations{ $operation }, $hostname );
 
-    if ( $operation eq "status") {
-	$command .= " 2>/dev/null";
-	($result, $retval, $errval) = run_command($command);
-	if ($retval == -1) {
-	    die "Error running '$command': $errval";
-	} elsif ( $retval == 0 ) {
-	    return "Online";
-	} elsif ( $retval == 256 ) {
-	    # Normal termination, WEXITSTATUS($?) == 1
-	    $result =~ m/^HCPCQU(\d+)E.*/;
-	    if ( defined($1) && $1 == 45 ) {
-		return "Offline";
-	    } else {
-		chomp($result);
-		die ($result || "Unknown error");
-	    }
-	} else {
-	    chomp($result);
-	    die ($result || "Unknown error");
+    $command .= " 2>/dev/null";
+    ($result, $retval, $errval) = run_command($command);
+    if ($retval == -1) {
+	die "Error running '$command': $errval";
+    } elsif ( $retval == 0 ) {
+	return $responses{$operation};
+    } elsif ( $retval == 256 ) {
+	# Normal termination, WEXITSTATUS($?) == 1
+	$result =~ m/^HCP(CQU|SEC)(\d+)E.*/;
+	if ( defined($2) && $2 == 45 ) {
+	    return "Offline" unless ($operation eq "cycle");
 	}
+	chomp($result);
+	die ($result || "Unknown error");
     } else {
-	$command .= " 2>&1";
-	($result, $retval, $errval) = run_command($command);
-	if ($retval == -1) {
-	    die "Error running '$command': $errval";
-	} elsif ($retval != 0) {
-	    chomp($result);
-	    die ($result || "Unknown error");
-	}
+	chomp($result);
+	die ($result || "Unknown error");
     }
 
     return;
