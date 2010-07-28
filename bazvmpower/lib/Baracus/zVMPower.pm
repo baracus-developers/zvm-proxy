@@ -1,6 +1,6 @@
-package bazvmpower;
+package Baracus::zVMPower;
 use Dancer ':syntax';
-use VmcpWrapper;
+use Baracus::VmcpWrapper;
 
 my @actions = ( "on", "off", "cycle", "status" );
 

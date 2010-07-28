@@ -1,4 +1,4 @@
-package VmcpWrapper;
+package Baracus::VmcpWrapper;
 require Exporter;
 use POSIX;
 

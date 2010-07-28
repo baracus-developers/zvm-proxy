@@ -1,4 +1,4 @@
 #!/usr/bin/perl
 use Dancer;
-load_app 'bazvmpower';
+load_app 'Baracus::zVMPower';
 dance;

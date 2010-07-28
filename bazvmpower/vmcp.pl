@@ -1,10 +1,10 @@
 #!/usr/bin/perl -w
 
 BEGIN {
-    push @INC,"./bazvmpower/lib";
+    push @INC,"./lib";
 }
 
-use VmcpWrapper;
+use Baracus::VmcpWrapper;
 
 if (scalar(@ARGV) != 2) {
     print STDERR "Usage: $0 <operation> <guestname>\n";
