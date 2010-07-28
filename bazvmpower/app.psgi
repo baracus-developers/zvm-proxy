@@ -1,6 +1,6 @@
 # PSGI application bootstraper for Dancer
 use Dancer;
-load_app 'bazvmpower';
+load_app 'Baracus::zVMPower';
 
 use Dancer::Config 'setting';
 setting apphandler  => 'PSGI';
