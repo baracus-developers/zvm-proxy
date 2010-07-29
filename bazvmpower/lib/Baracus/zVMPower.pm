@@ -29,13 +29,13 @@ get '/' => sub {
     template 'index';
 };
 
-get '/power/:guest/:action' => sub {
-    my $guest = params->{guest};
+get '/power/:action' => sub {
+    my $guest = params->{node};
     my $action = params->{action};
 
     error "Unknown action!\n" unless (grep(/$action/,@actions));
 
-    debug "Guest: '" . params->{guest} .
+    debug "Guest: '" . params->{node} .
 	"', Action: '" . params->{action} . "'\n";
 
     debug "Host: '" . request->{host} . "'\n";
@@ -53,7 +53,7 @@ get '/power/:guest/:action' => sub {
 
     eval {
 	my $result = power($action, $guest);
-	return { guest => params->{guest}, status => $result };
+	return { guest => params->{node}, status => $result };
 	1;
     } or do {
 	my $err = $@ || "Unknown error";
