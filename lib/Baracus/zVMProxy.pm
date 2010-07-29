@@ -279,6 +279,13 @@ sub run {
     setlogmask($logmask);
     $ENV{PATH} .= ":/sbin";
 
+    # In case the daemon dies we still want to see the message
+    if ($daemonize) {
+	$SIG{__DIE__} = sub {
+	    syslog(LOG_CRIT, @_);
+	};
+    }
+
     my($socket, $msg, $MAXLEN);
     $MAXLEN = 1024;
 
@@ -306,11 +313,6 @@ sub run {
 	    or die "Can not create pid file ('$pidfile'): $!\n";
 
 	$daemon_pidfile = $pidfile;
-
-	# In case the daemon dies we still want to see the message
-	$SIG{__DIE__} = sub {
-	    syslog(LOG_CRIT, @_);
-	};
 
 	open STDIN, '/dev/null' or die "Can't read /dev/null: $!";
 	open STDOUT, '>/dev/null' or die "Can't write to /dev/null: $!";
