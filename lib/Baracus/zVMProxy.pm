@@ -305,6 +305,11 @@ sub run {
 	sysopen(PIDFILE, $daemon_pidfile, O_WRONLY | O_CREAT | O_EXCL, 0600)
 	    or die "Can not create pid file ('$daemon_pidfile'): $!\n";
 
+	# In case the daemon dies we still want to see the message
+	$SIG{__DIE__} = sub {
+	    syslog(LOG_CRIT, @_);
+	};
+
 	open STDIN, '/dev/null' or die "Can't read /dev/null: $!";
 	open STDOUT, '>/dev/null' or die "Can't write to /dev/null: $!";
 	open STDERR, '>/dev/null' or die "Can't write to /dev/null: $!";
