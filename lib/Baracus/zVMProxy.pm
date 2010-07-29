@@ -9,7 +9,6 @@ require Exporter;
 use Fcntl;		# for sysopen
 use WWW::Curl::Easy;
 use Sys::Syslog qw(:standard :macros);	# standard functions, plus macros
-use File::Basename;
 use POSIX qw(setsid);
 use IO::Socket;
 
@@ -34,15 +33,16 @@ our @EXPORT = qw(
 
 our $VERSION = '0.01';
 
+our $daemon_name = 'bazvmproxy';
+our $daemon_pidfile;	# Will be filled in daemonize
+our $daemon_running = 1;
+
 # Our default configuration variables
 our $baurl = "http://localhost/ba/";
 our $downloaddir = "/tmp";
-our $socketpath = "/var/run/bazvmproxy.socket";
+our $socketpath = "/var/run/%s.socket";
 our $logmask = LOG_UPTO(LOG_INFO);
 our $daemonize = 0;
-
-our $daemon_pidfile;	# Will be filled in daemonize
-our $daemon_running = 1;
 
 # Preloaded methods go here.
 
@@ -258,7 +258,10 @@ sub signalHandler {
 }
 
 sub run {
-    my $daemon_name = basename($0, '.pl');
+
+    if (defined $_[0]) {
+	$daemon_name = $_[0];
+    }
 
     # Initialize syslog and first part of daemonization
     openlog($daemon_name, 'perror,pid', LOG_DAEMON);
@@ -280,6 +283,7 @@ sub run {
     $MAXLEN = 1024;
 
     # $socketpath is not a socket but something else
+    $socketpath = sprintf($socketpath, $daemon_name);
     unlink($socketpath) if (-S $socketpath);
     if (-e $socketpath) {
 	die "$0: won't overwrite " . $socketpath . "\n";
