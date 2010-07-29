@@ -271,7 +271,7 @@ sub run {
     # Read in (perl style) configuration file
     my $confpath = "/etc/" . $daemon_name . ".conf";
     if (-s $confpath) {
-	info("Using configuration file " . $confpath);
+	info("Using configuration file '$confpath'\n");
 	do $confpath;
     }
 
@@ -300,6 +300,11 @@ sub run {
     $SIG{PIPE} = 'ignore';
 
     if ($daemonize) {
+	# Create the .pid file before we fork in case something goes wrong
+	$daemon_pidfile = "/var/run/" . $daemon_name . ".pid";
+	sysopen(PIDFILE, $daemon_pidfile, O_WRONLY | O_CREAT | O_EXCL, 0600)
+	    or die "Can not create pid file ('$daemon_pidfile'): $!\n";
+
 	open STDIN, '/dev/null' or die "Can't read /dev/null: $!";
 	open STDOUT, '>/dev/null' or die "Can't write to /dev/null: $!";
 	open STDERR, '>/dev/null' or die "Can't write to /dev/null: $!";
@@ -307,11 +312,7 @@ sub run {
 	exit if $pid;
 	setsid or die "Can't start a new session: $!";
 
-	# Create a PID file
-	$daemon_pidfile = "/var/run/" . $daemon_name . ".pid";
-	sysopen(PIDFILE, $daemon_pidfile, O_WRONLY | O_CREAT | O_EXCL, 0600)
-	    or die "Pid file already exists: " . $daemon_pidfile . "\n";
-
+	# write daemon PID to the .pid file
 	print PIDFILE $$;
 	close(PIDFILE);
     }
