@@ -46,6 +46,47 @@ our $daemon_running = 1;
 
 # Preloaded methods go here.
 
+sub crit
+{
+    if ($daemonize) {
+	syslog(LOG_CRIT, @_);
+    } else {
+	my ($format, @args) = @_;
+	print STDERR "CRIT: " . $format, @args;
+    }
+}
+
+sub err
+{
+    if ($daemonize) {
+	syslog(LOG_ERR, @_);
+    } else {
+	my ($format, @args) = @_;
+	print STDERR "ERROR: " . $format, @args;
+    }
+}
+
+sub info
+{
+    if ($daemonize) {
+	syslog(LOG_INFO, @_);
+    } else {
+	my ($format, @args) = @_;
+	print STDERR "INFO: " . $format, @args;
+    }
+}
+
+sub debug
+{
+    if ($daemonize) {
+	syslog(LOG_DEBUG, @_);
+    } else {
+	my ($format, @args) = @_;
+	printf STDERR "DEBUG: " . $format, @args;
+    }
+}
+
+
 sub process_smsg_event
 {
     my($line) = @_;
@@ -59,11 +100,11 @@ sub process_smsg_event
 	# z/VM is using "-" as a separator
 	$mac =~ s/-/:/g;
 
-	syslog(LOG_INFO, "%s: Processing MAC %s\n", $tokens[0], $mac);
+	info("%s: Processing MAC %s\n", $tokens[0], $mac);
 
 	if (fetch_images($tokens[0], $mac,
 			 my @images = ('linux', 'parm', 'initrd')) == 0) {
-	    syslog(LOG_INFO, "%s: Punching images %s\n", $tokens[0],
+	    info("%s: Punching images %s\n", $tokens[0],
 		   join(' ', @images));
 
 	    foreach my $image (@images) {
@@ -72,15 +113,14 @@ sub process_smsg_event
 			    get_downloadpath($tokens[0], $image),
 			    "--name",
 			    get_imagename($tokens[0], $image));
-		syslog(LOG_DEBUG, join(' ', @args) . "\n");
+		debug(join(' ', @args) . "\n");
 		system(@args);
 		if ($? & 127) {
-		    syslog(LOG_CRIT,
-			   "child died with signal %d, %s coredump\n",
-			   ($? & 127), ($? & 128) ? 'with' : 'without');
+		    crit("child died with signal %d, %s coredump\n",
+			 ($? & 127), ($? & 128) ? 'with' : 'without');
 		    goto ERROR_NEXT;
 		} elsif ($? != 0) {
-		    syslog(LOG_ERR, "failed to execute: $!\n");
+		    err("failed to execute: $!\n");
 		    goto ERROR_NEXT;
 		}
 	    }
@@ -89,7 +129,7 @@ sub process_smsg_event
 	}
 
 #	if (fetch_images($tokens[0], $mac, my @images = ('exec')) == 0) {
-#	    syslog(LOG_INFO, "Not implemented yet!\n");
+#	    info("Not implemented yet!\n");
 #	    goto SUCCESS_NEXT;
 #	}
 	#
@@ -98,16 +138,16 @@ sub process_smsg_event
 	#
 #	elsif ($punched) {
 	if ($punched) {
-	    syslog(LOG_INFO, "%s: IPL guest from RDR\n", $tokens[0]);
+	    info("%s: IPL guest from RDR\n", $tokens[0]);
 	    my @args = ("/sbin/vmcp", "send", $tokens[0],
 			"#CP IPL 00c");
-	    syslog(LOG_DEBUG, join(' ', @args) . "\n");
+	    debug(join(' ', @args) . "\n");
 	    system(@args);
 	    if ($? & 127) {
-		syslog(LOG_CRIT, "child died with signal %d, %s coredump\n",
+		crit("child died with signal %d, %s coredump\n",
 		       ($? & 127), ($? & 128) ? 'with' : 'without');
 	    } elsif ($? != 0) {
-		syslog(LOG_ERR, "failed to execute: $!\n");
+		err("failed to execute: $!\n");
 	    }
 	    goto SUCCESS_NEXT;
 	}
@@ -117,18 +157,18 @@ sub process_smsg_event
     # If we are here none of the MACs was registered with Baracus.
     #
     my @args = ("/sbin/vmcp", "send", $tokens[0], "#CP LOGOFF");
-    syslog(LOG_DEBUG, join(' ', @args) . "\n");
+    debug(join(' ', @args) . "\n");
     system(@args);
     if ($? & 127) {
-	syslog(LOG_CRIT, "child died with signal %d, %s coredump\n",
+	crit("child died with signal %d, %s coredump\n",
 	       ($? & 127), ($? & 128) ? 'with' : 'without');
     } elsif ($? != 0) {
-	syslog(LOG_ERR, "failed to execute: $!\n");
+	err("failed to execute: $!\n");
     }
 
     next;
   ERROR_NEXT:
-    syslog(LOG_DEBUG, "Abort! Next try\n");
+    debug("Abort! Next try\n");
   SUCCESS_NEXT:
 }
 
@@ -149,7 +189,7 @@ sub mycurl
 
     # NOTE - do not use a typeglob here.
     # A reference to a typeglob is okay though.
-    syslog(LOG_DEBUG, "Writing to %s\n", $filename);
+    debug("Writing to %s\n", $filename);
     open (my $fileb, ">" . $filename);
     $curl->setopt(CURLOPT_WRITEDATA,$fileb);
 
@@ -159,14 +199,14 @@ sub mycurl
     # Looking at the results...
     if ($retcode == 0) {
 	my $response_code = $curl->getinfo(CURLINFO_HTTP_CODE);
-	syslog(LOG_DEBUG, "Status: %d, URL: %s\n", $response_code,
+	debug("Status: %d, URL: %s\n", $response_code,
 	       $curl->getinfo(CURLINFO_EFFECTIVE_URL));
 	# judge result and next action based on $response_code
 	if (($response_code < 200) || ($response_code >= 300)) {
 	    return $response_code
 	}
     } else {
-	syslog(LOG_ERR, "An error happened: " .
+	err("An error happened: " .
 	       $curl->strerror($retcode) ." ($retcode)\n");
     }
 
@@ -203,7 +243,7 @@ sub fetch_images
     my $retval = 0;
 
     foreach my $image (@images) {
-	syslog(LOG_DEBUG, "Getting " . $image . "\n");
+	debug("Getting " . $image . "\n");
 	$retval = mycurl($baurl . $image . "?mac=" . $mac,
 			 get_downloadpath($userid, $image));
 	if ($retval != 0) {
@@ -228,7 +268,7 @@ sub run {
     # Read in (perl style) configuration file
     my $confpath = "/etc/" . $daemon_name . ".conf";
     if (-s $confpath) {
-	syslog(LOG_INFO, "Using configuration file " . $confpath);
+	info("Using configuration file " . $confpath);
 	do $confpath;
     }
 
@@ -248,7 +288,7 @@ sub run {
     $socket = IO::Socket::UNIX->new(Local => $socketpath,
 				    Type  => SOCK_DGRAM)
 	or die "Can't create socket '$socketpath': $!";
-    syslog(LOG_DEBUG, "Awaiting messages on " . $socket->hostpath() . "\n");
+    debug("Awaiting messages on " . $socket->hostpath() . "\n");
 
 
     # Callback signal handler for signals.
@@ -275,7 +315,7 @@ sub run {
     while ($daemon_running) {
 	# exit if socket manually removed
 	die "SOCKET disappeared: " . $socketpath unless -S $socketpath;
-	syslog(LOG_DEBUG, "Waiting for SMSG event\n");
+	debug("Waiting for SMSG event\n");
 
 	# next line blocks until there's an event
 	if(!defined($socket->recv($msg, $MAXLEN, 0))) {
@@ -290,13 +330,13 @@ sub run {
 
 	my $line = join(' ', $values{'SMSG_SENDER'}, $values{'SMSG_ID'},
 			$values{'SMSG_TEXT'});
-	syslog(LOG_DEBUG, "SMSG Payload: " . $line);
+	debug("SMSG Payload: " . $line);
 	process_smsg_event($line);
 
 	select(undef, undef, undef, 0.2);  # sleep 1/5th second
     }
 
-    syslog(LOG_INFO, "Exiting\n");
+    info("Exiting\n");
     closelog();
 }
 
