@@ -5,44 +5,24 @@ use strict;
 use warnings;
 
 require Exporter;
-use AutoLoader qw(AUTOLOAD);
+
 use Fcntl;	# for sysopen
 use File::Basename;
 
-
 our @ISA = qw(Exporter);
 
-# Items to export into callers namespace by default. Note: do not export
-# names by default without a very good reason. Use EXPORT_OK instead.
-# Do not simply export all your public functions/methods/constants.
+our @EXPORT_OK = ();
 
-# This allows declaration	use Baracus::zVMProxy ':all';
-# If you do not need this, moving things directly into @EXPORT or @EXPORT_OK
-# will save memory.
-our %EXPORT_TAGS = ( 'all' => [ qw(
-	
-) ] );
-
-our @EXPORT_OK = ( @{ $EXPORT_TAGS{'all'} } );
-
-our @EXPORT = qw(
-	
-);
+our @EXPORT = ();
 
 our $VERSION = '0.01';
 
-
 # Preloaded methods go here.
 
-# Autoload methods go after =cut, and are processed by the autosplit program.
-
 BEGIN {
-    my $daemon_name = basename($0, '.pl');
+    my $daemon_name = $ENV{'BARACUS_PIDCREATOR_NAME'} || basename($0, '.pl');
     my $daemon_pidfile = "/var/run/" . $daemon_name . ".pid";
 
-    print STDERR ($_," = ",$ENV{$_},"\n") foreach (keys %ENV); 
-
-    print STDERR "name: $daemon_name, pidfile: $daemon_pidfile\n";
     sysopen(PIDFILE, $daemon_pidfile, O_WRONLY | O_CREAT | O_EXCL, 0600)
 	or die "Can not create pid file ('$daemon_pidfile'): $!\n";
     print PIDFILE $$;
@@ -55,20 +35,16 @@ __END__
 
 =head1 NAME
 
-Baracus::zVMProxy - Perl extension for blah blah blah
+Baracus::PidCreator - Plackup Perl module for creation of a pid file
 
 =head1 SYNOPSIS
 
-  use Baracus::zVMProxy;
-  blah blah blah
+  plackup ... -M Baracus::PidCreator ...
 
 =head1 DESCRIPTION
 
-Stub documentation for Baracus::zVMProxy, created by h2xs. It looks like the
-author of the extension was negligent enough to leave the stub
-unedited.
-
-Blah blah blah.
+This is a Perl module that creates a pid file when it is used. Plackup supports
+loading it just before loading application code.
 
 =head2 EXPORT
 
@@ -78,18 +54,11 @@ None by default.
 
 =head1 SEE ALSO
 
-Mention other useful documentation such as the documentation of
-related modules or operating system documentation (such as man pages
-in UNIX), or any relevant external documentation such as RFCs or
-standards.
-
-If you have a mailing list set up for your module, mention it here.
-
-If you have a web site set up for your module, mention it here.
+plackup(1)
 
 =head1 AUTHOR
 
-Jan Blunck, E<lt>jblunck@(none)E<gt>
+Jan Blunck, E<lt>jblunck@novell.comE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
