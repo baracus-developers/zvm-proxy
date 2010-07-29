@@ -35,6 +35,7 @@ our $VERSION = '0.01';
 
 our $daemon_name = 'bazvmproxy';
 our $daemon_pidfile;	# Will be filled in daemonize
+our $daemon_pid;	# Will be filled in daemonize
 our $daemon_running = 1;
 
 # Our default configuration variables
@@ -308,7 +309,7 @@ sub run {
 
     if ($daemonize) {
 	# Create the .pid file before we fork in case something goes wrong
-	local $pidfile = "/var/run/" . $daemon_name . ".pid";
+	my $pidfile = "/var/run/" . $daemon_name . ".pid";
 	sysopen(PIDFILE, $pidfile, O_WRONLY | O_CREAT | O_EXCL, 0600)
 	    or die "Can not create pid file ('$pidfile'): $!\n";
 
@@ -319,6 +320,7 @@ sub run {
 	open STDERR, '>/dev/null' or die "Can't write to /dev/null: $!";
 	defined(my $pid = fork) or die "Can't fork: $!";
 	exit if $pid;
+	$daemon_pid = $$;
 	setsid or die "Can't start a new session: $!";
 
 	# write daemon PID to the .pid file
@@ -355,7 +357,7 @@ sub run {
 }
 
 END {
-    if ($daemon_pidfile) {
+    if ($$ == $daemon_pid && $daemon_pidfile) {
 	debug("Removing .pid file '$daemon_pidfile'\n");
 	unlink($daemon_pidfile);
     }
