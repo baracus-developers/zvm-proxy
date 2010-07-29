@@ -301,9 +301,11 @@ sub run {
 
     if ($daemonize) {
 	# Create the .pid file before we fork in case something goes wrong
-	$daemon_pidfile = "/var/run/" . $daemon_name . ".pid";
-	sysopen(PIDFILE, $daemon_pidfile, O_WRONLY | O_CREAT | O_EXCL, 0600)
-	    or die "Can not create pid file ('$daemon_pidfile'): $!\n";
+	local $pidfile = "/var/run/" . $daemon_name . ".pid";
+	sysopen(PIDFILE, $pidfile, O_WRONLY | O_CREAT | O_EXCL, 0600)
+	    or die "Can not create pid file ('$pidfile'): $!\n";
+
+	$daemon_pidfile = $pidfile;
 
 	# In case the daemon dies we still want to see the message
 	$SIG{__DIE__} = sub {
@@ -350,6 +352,12 @@ sub run {
     closelog();
 }
 
+END {
+    if ($daemon_pidfile) {
+	debug("Removing .pid file '$daemon_pidfile'\n");
+	unlink($daemon_pidfile);
+    }
+}
 
 1;
 __END__
