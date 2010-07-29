@@ -10,4 +10,8 @@ WriteMakefile(
       (ABSTRACT_FROM  => 'lib/Baracus/zVMProxy.pm', # retrieve abstract from module
        AUTHOR         => 'Jan Blunck <jblunck@novell.com>') : ()),
     EXE_FILES         => ['script/bazvmproxy.pl'],
+    PL_FILES          => {},
+    INSTALLSCRIPT     => '$(PREFIX)/sbin',
+    INSTALLSITESCRIPT => '$(PREFIX)/sbin',
+    INSTALLVENDORSCRIPT => '$(PREFIX)/sbin',
 );

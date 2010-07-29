@@ -2,7 +2,7 @@ use strict;
 use warnings;
 use ExtUtils::MakeMaker;
 
-my @scripts = qw(bazvmpower.pl vmcp.pl);
+my @scripts = qw(bazvmpower.pl);
 
 WriteMakefile(
     NAME                => 'Baracus::zVMPower',
