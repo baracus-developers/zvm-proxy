@@ -52,7 +52,7 @@ sub crit
 	syslog(LOG_CRIT, @_);
     } else {
 	my ($format, @args) = @_;
-	print STDERR "CRIT: " . $format, @args;
+	printf STDERR "CRIT: " . $format, @args;
     }
 }
 
@@ -62,7 +62,7 @@ sub err
 	syslog(LOG_ERR, @_);
     } else {
 	my ($format, @args) = @_;
-	print STDERR "ERROR: " . $format, @args;
+	printf STDERR "ERROR: " . $format, @args;
     }
 }
 
@@ -72,7 +72,7 @@ sub info
 	syslog(LOG_INFO, @_);
     } else {
 	my ($format, @args) = @_;
-	print STDERR "INFO: " . $format, @args;
+	printf STDERR "INFO: " . $format, @args;
     }
 }
 
