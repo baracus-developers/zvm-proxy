@@ -33,7 +33,11 @@ get '/power/:action' => sub {
     my $guest = params->{node};
     my $action = params->{action};
 
-    error "Unknown action!\n" unless (grep(/$action/,@actions));
+    return send_error("Unknown action!\n", 400)
+	unless (grep(/$action/,@actions));
+
+    return send_error("Node undefined!\n", 400)
+	unless (defined(params->{node}));
 
     debug "Guest: '" . params->{node} .
 	"', Action: '" . params->{action} . "'\n";
@@ -47,8 +51,10 @@ get '/power/:action' => sub {
     }
 
     if (request->remote_address ne $baaddress) {
-	error("Not authorized");
-	return { error => "Not authorized" };
+	error("Forbidden: IP: '" . request->remote_address .
+	      "', REQUEST_URI: '" . request->request_uri .
+	      "', HTTP_USER_AGENT: '" . request->user_agent . "'\n");
+	return send_error("Forbidden", 403);
     }
 
     eval {
@@ -58,7 +64,7 @@ get '/power/:action' => sub {
     } or do {
 	my $err = $@ || "Unknown error";
 	error($err);
-	return { error => $@ || "Unknown error" };
+	return send_error($err, 500);
     };
 };
 
