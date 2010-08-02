@@ -25,27 +25,24 @@ my %responses = (
 
 sub run_command
 {
-    local($command) = @_;
-    local(@result, @contents, $pid);
-
-    # Dancer: do not automatically reap this child
-    local $savesig = $SIG{CHLD};
-    $SIG{CHLD} = 'DEFAULT';
+    my($command) = @_;
+    my(@result, $contents, $pid);
+    local *PIPE;
 
     $pid = open(PIPE, $command . ' |');
     unless (defined $pid) {
 	die "Cannot fork: $!";
     }
 
-    while (<PIPE>) {
-	push @contents, $_;
+    {
+	local $/ = undef;
+	$contents = <PIPE>;
     }
 
     close(PIPE);
 
-    $result[0] = join("\n", @contents);
+    $result[0] = $contents;
     $result[1] = $?;
-
     if (WIFEXITED($?)) {
 	if (WEXITSTATUS($?) == 126) {
 	    # EPERM
@@ -55,21 +52,20 @@ sub run_command
 	    $! = 2;
 	}
 	$result[1] = WEXITSTATUS($?);
-	$result[2] = $!;
     }
+    $result[2] = $!;
 
-    # Restore original signal setting
-    $SIG{CHLD} = $savesig;
     return @result;
 }
+
 
 # "Usage: $0 <operation> <guestname>\n";
 # "    e.g. operation = 'status'\n";
 # "         guestname = 'LINUX101'\n";
 sub power
 {
-    local($operation, $hostname) = @_;
-    local($command, $result, $retval, $errval);
+    my($operation, $hostname) = @_;
+    my($command, $result, $retval, $errval);
 
     die "Invalid argument: '" . join(" ", @_) . "'"
 	unless ((scalar(@_) == 2) && grep(/$operation/,keys(%operations)));

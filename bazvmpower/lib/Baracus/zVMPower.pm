@@ -58,15 +58,15 @@ get '/power/:action' => sub {
 	return send_error("Forbidden", 403);
     }
 
-    eval {
-	my $result = power($action, $guest);
-	return { guest => params->{node}, status => $result };
-	1;
-    } or do {
-	my $err = $@ || "Unknown error: ($?) $!";
-	error($err);
-	return send_error($err, 500);
+    my $result = eval {
+	power($action, $guest);
     };
+    if ($@) {
+	error($@);
+	return send_error($@, 500);
+    }
+
+    return { guest => params->{node}, status => $result };
 };
 
 true;
