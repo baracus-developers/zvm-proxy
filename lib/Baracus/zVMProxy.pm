@@ -245,7 +245,7 @@ sub fetch_images
 
     foreach my $image (@images) {
 	debug("Getting " . $image . "\n");
-	$retval = mycurl($baurl . $image . "?mac=" . $mac,
+	$retval = mycurl($baurl . $image . "?mac=" . $mac . "&node=" . $userid,
 			 get_downloadpath($userid, $image));
 	if ($retval != 0) {
 	    return $retval;
