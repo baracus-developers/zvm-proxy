@@ -63,7 +63,7 @@ get '/power/:action' => sub {
 	return { guest => params->{node}, status => $result };
 	1;
     } or do {
-	my $err = $@ || "Unknown error";
+	my $err = $@ || "Unknown error: ($?) $!";
 	error($err);
 	return send_error($err, 500);
     };

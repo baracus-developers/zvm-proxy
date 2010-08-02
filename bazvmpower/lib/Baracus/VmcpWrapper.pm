@@ -45,7 +45,18 @@ sub run_command
 
     $result[0] = join("\n", @contents);
     $result[1] = $?;
-    $result[2] = $!;
+
+    if (WIFEXITED($?)) {
+	if (WEXITSTATUS($?) == 126) {
+	    # EPERM
+	    $! = 1;
+	} elsif (WEXITSTATUS($?) == 127) {
+	    # ENOENT
+	    $! = 2;
+	}
+	$result[1] = WEXITSTATUS($?);
+	$result[2] = $!;
+    }
 
     # Restore original signal setting
     $SIG{CHLD} = $savesig;
@@ -68,20 +79,20 @@ sub power
     $command .= " 2>/dev/null";
     ($result, $retval, $errval) = run_command($command);
     if ($retval == -1) {
-	die "Error running '$command': $errval";
+	die "Error running '$command': ($retval) $errval";
     } elsif ( $retval == 0 ) {
 	return $responses{$operation};
-    } elsif ( $retval == 256 ) {
-	# Normal termination, WEXITSTATUS($?) == 1
+    } elsif ( $retval == 1 ) {
+	# Normal termination
 	$result =~ m/^HCP(CQU|SEC)(\d+)E.*/;
 	if ( defined($2) && $2 == 45 ) {
 	    return "Offline" unless ($operation eq "cycle");
 	}
 	chomp($result);
-	die ($result || "Unknown error");
+	die ($result || "Unknown error: ($retval) $errval");
     } else {
 	chomp($result);
-	die ($result || "Unknown error");
+	die ($result || "Unknown error: ($retval) $errval");
     }
 
     return;
