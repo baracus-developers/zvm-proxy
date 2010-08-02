@@ -50,7 +50,8 @@ get '/power/:action' => sub {
 	debug "$key: " . (defined $value ? $value : "" ) . "\n";
     }
 
-    if (request->remote_address ne $baaddress) {
+    if (request->remote_address ne $baaddress &&
+	request->remote_address ne "127.0.0.1") {
 	error("Forbidden: IP: '" . request->remote_address .
 	      "', REQUEST_URI: '" . request->request_uri .
 	      "', HTTP_USER_AGENT: '" . request->user_agent . "'\n");
