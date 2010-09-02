@@ -129,16 +129,71 @@ sub process_smsg_event
 	    $punched = 1;
 	}
 
-#	if (fetch_images($tokens[0], $mac, my @images = ('exec')) == 0) {
-#	    info("Not implemented yet!\n");
-#	    goto SUCCESS_NEXT;
-#	}
+	#
+	# Fetch guest specific REXX script and execute it
+	#
+	if (fetch_images($tokens[0], $mac, my @images = ('exec')) == 0) {
+	    info("%s: Punching files %s\n", $tokens[0],
+		   join(' ', @images));
+
+	    foreach my $image (@images) {
+		my @args = ("/usr/sbin/vmur",
+			    "punch", "--rdr", "--user", $tokens[0],
+			    get_downloadpath($tokens[0], $image),
+			    "--text",
+			    "--name",
+			    uc(get_imagename($tokens[0], $image)));
+		debug(join(' ', @args) . "\n");
+		system(@args);
+		if ($? & 127) {
+		    crit("child died with signal %d, %s coredump\n",
+			 ($? & 127), ($? & 128) ? 'with' : 'without');
+		    goto ERROR_NEXT;
+		} elsif ($? != 0) {
+		    err("failed to execute: $!\n");
+		    goto ERROR_NEXT;
+		}
+	    }
+
+	    # Reorder files in remote reader: bring EXEC to front
+	    my @args = ("/sbin/vmcp", "send", $tokens[0],
+			"'PIPE CP Q RDR ALL | drop | l 54." .
+			(length($tokens[0])+1) . " /" . $tokens[0] .
+			" / | l 64.5 /EXEC / | split | drop | take | " .
+			"preface literal order reader | join / / | cp'");
+	    debug(join(' ', @args) . "\n");
+	    system(@args);
+	    if ($? & 127) {
+		crit("child died with signal %d, %s coredump\n",
+		     ($? & 127), ($? & 128) ? 'with' : 'without');
+		goto ERROR_NEXT;
+	    } elsif ($? != 0) {
+		err("failed to execute: $!\n");
+		goto ERROR_NEXT;
+	    }
+
+	    # Execute REXX script
+	    @args = ("/sbin/vmcp", "send", $tokens[0],
+		     "'PIPE reader | spec 2-* 1 | drop 1 | rexx *:'");
+	    debug(join(' ', @args) . "\n");
+	    system(@args);
+	    if ($? & 127) {
+		crit("child died with signal %d, %s coredump\n",
+		     ($? & 127), ($? & 128) ? 'with' : 'without');
+		goto ERROR_NEXT;
+	    } elsif ($? != 0) {
+		err("failed to execute: $!\n");
+		goto ERROR_NEXT;
+	    }
+
+	    goto SUCCESS_NEXT;
+	}
 	#
 	# If we successfully punched something but failed to download a
 	# guest REXX script we want to IPL the guest from the reader
 	#
-#	elsif ($punched) {
-	if ($punched) {
+	elsif ($punched) {
+#	if ($punched) {
 	    info("%s: IPL guest from RDR\n", $tokens[0]);
 	    my @args = ("/sbin/vmcp", "send", $tokens[0],
 			"#CP IPL 00c");
