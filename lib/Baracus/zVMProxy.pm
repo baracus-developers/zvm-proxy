@@ -193,7 +193,6 @@ sub process_smsg_event
 	# guest REXX script we want to IPL the guest from the reader
 	#
 	elsif ($punched) {
-#	if ($punched) {
 	    info("%s: IPL guest from RDR\n", $tokens[0]);
 	    my @args = ("/sbin/vmcp", "send", $tokens[0],
 			"#CP IPL 00c");
@@ -207,11 +206,14 @@ sub process_smsg_event
 	    }
 	    goto SUCCESS_NEXT;
 	}
+
+      ERROR_NEXT:
     } # @macs
 
     #
     # If we are here none of the MACs was registered with Baracus.
     #
+    debug("Logoff guest $tokens[0]\n");
     my @args = ("/sbin/vmcp", "send", $tokens[0], "#CP LOGOFF");
     debug(join(' ', @args) . "\n");
     system(@args);
@@ -222,9 +224,6 @@ sub process_smsg_event
 	err("failed to execute: $!\n");
     }
 
-    next;
-  ERROR_NEXT:
-    debug("Abort! Next try\n");
   SUCCESS_NEXT:
 }
 
