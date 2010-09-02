@@ -191,7 +191,7 @@ sub process_smsg_event
 
 	    # Execute REXX script
 	    @args = ("/sbin/vmcp", "send", $tokens[0],
-		     "'PIPE reader | spec 2-* 1 | drop 1 | rexx *:'");
+		     'PIPE reader | spec 2-* 1 | drop 1 | rexx *: ');
 	    debug(join(' ', @args) . "\n");
 	    system(@args);
 	    if ($? & 127) {
